@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Lpoints — מרכז הנקודות</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;700&family=Cardo:wght@400;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Lpoints</h1>
+        <p class="subtitle">מרכז הנקודות — כל הטבלאות במקום אחד</p>
+    </header>
+
+    <main id="hubContainer">
+        <div id="loader">טוען נתונים...</div>
+    </main>
+
+    <footer>
+        <a href="https://github.com/burkasonthehacker" target="_blank">GitHub</a>
+    </footer>
+
+    <script type="module">
+        import { db, COLLECTIONS } from "./shared/firebase.js";
+        import { collection, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // ── הגדר כאן את כל האתרים שתרצה להציג בהאב ──
+        const SITES = [
+            { key: "liri",   label: "נקודות לירי",   url: "./liri/",   accentColor: "#9d4edd" },
+            { key: "shanan", label: "נקודות שאנן",  url: "./shanan/", accentColor: "#8b5e2a" },
+            // { key: "segev",  label: "נקודות סגב",   url: "./segev/",  accentColor: "#0a6e8b" },
+        ];
+
+        const container = document.getElementById("hubContainer");
+        container.innerHTML = "";
+
+        SITES.forEach(site => {
+            const COL = COLLECTIONS[site.key];
+            if (!COL) return;
+
+            const card = document.createElement("div");
+            card.className = "site-card";
+            card.style.setProperty("--site-accent", site.accentColor);
+            card.innerHTML = `
+                <div class="site-header">
+                    <h2><a href="${site.url}">${site.label}</a></h2>
+                </div>
+                <div class="scoreboard" id="sb-${site.key}">טוען...</div>
+                <a href="${site.url}" class="visit-btn">כנס לאתר ←</a>`;
+            container.appendChild(card);
+
+            // Live scoreboard from Firestore
+            onSnapshot(collection(db, COL.friends), (snapshot) => {
+                const friends = snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => b.points - a.points);
+
+                const sb = document.getElementById(`sb-${site.key}`);
+                if (friends.length === 0) { sb.innerHTML = "<em>אין משתתפים עדיין</em>"; return; }
+                sb.innerHTML = friends.map((f, i) =>
+                    `<div class="sb-row">
+                        <span class="sb-rank">${i + 1}</span>
+                        <span class="sb-name">${f.id}</span>
+                        <span class="sb-pts">${f.points}</span>
+                    </div>`
+                ).join("");
+            });
+        });
+    </script>
+</body>
+</html>
