@@ -13,12 +13,12 @@ import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/
 
 // 🔧 החלף בפרטי הפרויקט החדש
 const firebaseConfig = {
-    apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-    authDomain:        "REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
-    projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
-    storageBucket:     "REPLACE_WITH_YOUR_PROJECT.firebasestorage.app",
-    messagingSenderId: "REPLACE_WITH_SENDER_ID",
-    appId:             "REPLACE_WITH_APP_ID"
+  apiKey: "AIzaSyAMFl5qF73bo7ifc3NJQXUt2KuNJFBHaQQ",
+  authDomain: "lpoints.firebaseapp.com",
+  projectId: "lpoints",
+  storageBucket: "lpoints.firebasestorage.app",
+  messagingSenderId: "870599365209",
+  appId: "1:870599365209:web:3b4af79ee3c08583c55748"
 };
 
 // 🔐 UIDs של אדמינים — הוסף אחרי ההתחברות הראשונה
