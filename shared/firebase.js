@@ -25,7 +25,7 @@ const firebaseConfig = {
 // להשיג UID: התחבר עם גוגל, פתח DevTools → Console → auth.currentUser.uid
 export const ADMIN_UIDS = {
     liri:   "2imzcJneZegV4jgnDW51lwHDiGY2",
-    shanan: "REPLACE_WITH_SHANAN_ADMIN_UID",
+    shanan: "lmEJTFHPjjU6Xic6ZYxlrTWGp3y1",
     // segev: "REPLACE_WITH_SEGEV_ADMIN_UID",
     // site4: "REPLACE_WITH_SITE4_ADMIN_UID",
 };
