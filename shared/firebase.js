@@ -20,7 +20,7 @@ const firebaseConfig = {
 export const ADMIN_UIDS = {
     liri:   "2imzcJneZegV4jgnDW51lwHDiGY2",
     shanan: "lmEJTFHPjjU6Xic6ZYxlrTWGp3y1",
-    segev:  "REPLACE_WITH_SEGEV_ADMIN_UID",  // 👈 החלף אחרי ההתחברות הראשונה
+    segev:  "rvLBnexQkqUH65vQRUmioFL9H873",
 };
 
 // 📦 קולקציות — namespace נפרד לכל אתר
