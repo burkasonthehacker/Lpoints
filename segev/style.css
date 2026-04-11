@@ -638,7 +638,7 @@ footer {
 
 .admin-login-btn {
     font-size: 0.75rem;
-    color: var(--red-bright)
+    color: #c90202;
     background: none;
     border: none;
     cursor: pointer;
