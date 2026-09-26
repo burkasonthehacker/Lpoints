@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>התחברות | בורסת הנקודות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="pse-header">
+    <div class="pse-subtitle">Points Stock Exchange</div>
+    <h1 class="pse-title">בורסת הנקודות</h1>
+</header>
+
+<main style="width:min(420px,92%); margin-top:20px;">
+
+    <!-- LOGIN -->
+    <div id="loginForm" class="panel input-group">
+        <div class="section-title" style="text-align:right;">התחברות</div>
+        <label class="field-label">אימייל</label>
+        <input id="loginEmail" type="email" placeholder="you@example.com" />
+        <label class="field-label">סיסמה</label>
+        <input id="loginPassword" type="password" />
+        <div class="field-error" id="loginError"></div>
+        <button class="btn btn-primary" onclick="doLogin()">התחברות</button>
+        <div class="auth-switch"><a onclick="showForgot()">שכחתי סיסמה</a></div>
+        <div class="auth-switch">אין לך חשבון? <a onclick="switchTo('register')">הרשמה</a></div>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="registerForm" class="panel input-group" style="display:none;">
+        <div class="auth-switch" style="text-align:right;">כבר יש לך חשבון? <a onclick="switchTo('login')">התחברות</a></div>
+        <div class="section-title" style="text-align:right;">הרשמה</div>
+        <label class="field-label">שם פרטי</label>
+        <input id="regFirst" />
+        <label class="field-label">שם משפחה</label>
+        <input id="regLast" />
+        <label class="field-label">אימייל</label>
+        <input id="regEmail" type="email" />
+        <label class="field-label">סיסמה (לפחות 6 תווים)</label>
+        <input id="regPassword" type="password" />
+        <div class="field-error" id="regError"></div>
+        <button class="btn btn-primary" onclick="doRegister()">הרשמה</button>
+    </div>
+
+    <!-- REGISTER SUCCESS -->
+    <div id="registerSuccess" class="panel" style="display:none; text-align:center; line-height:1.7;">
+        תודה שנרשמת. בקשת ההרשמה נשלחה לצוות ניהול האתר והיא תטופל בהקדם — אישור ההרשמה יישלח לך במייל.<br>
+        לשאלות נוספות יש לפנות ל־<a href="mailto:generalpointsss@gmail.com" style="color:var(--gold-bright);">generalpointsss@gmail.com</a> או פשוט לדבר עם תומר.
+    </div>
+
+    <!-- FORGOT PASSWORD -->
+    <div id="forgotForm" class="panel input-group" style="display:none;">
+        <div class="section-title" style="text-align:right;">שחזור סיסמה</div>
+        <label class="field-label">אימייל</label>
+        <input id="forgotEmail" type="email" />
+        <div class="field-error" id="forgotError"></div>
+        <button class="btn btn-primary" onclick="doForgot()">שלח קישור לאיפוס</button>
+        <div class="auth-switch"><a onclick="switchTo('login')">חזרה להתחברות</a></div>
+    </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script type="module">
+    import { auth } from "../shared/firebase.js";
+    import { createPendingUser } from "./logic.js";
+    import {
+        signInWithEmailAndPassword, createUserWithEmailAndPassword,
+        sendPasswordResetEmail
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+    // ⚙️ תשתית מייל (EmailJS) — מוכנה אך כבויה כברירת מחדל.
+    // כרגע כל התראה על הרשמה חדשה פשוט מופיעה לאדמין בתוך admin.html (טבלת "משתמשים בהמתנה").
+    // כשתרצו להפעיל שליחת מייל בפועל: מלאו את שלושת הערכים למטה, ושנו EMAIL_NOTIFICATIONS_ENABLED ל-true.
+    const EMAIL_NOTIFICATIONS_ENABLED = false;
+    const EMAILJS_SERVICE_ID  = "REPLACE_WITH_SERVICE_ID";
+    const EMAILJS_TEMPLATE_ID = "REPLACE_WITH_TEMPLATE_ID";
+    const EMAILJS_PUBLIC_KEY  = "REPLACE_WITH_PUBLIC_KEY";
+    const EMAILJS_READY = EMAIL_NOTIFICATIONS_ENABLED && !EMAILJS_SERVICE_ID.startsWith("REPLACE");
+    if (EMAILJS_READY) emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    const params = new URLSearchParams(location.search);
+    window.switchTo = (which) => {
+        document.getElementById("loginForm").style.display = which === "login" ? "flex" : "none";
+        document.getElementById("registerForm").style.display = which === "register" ? "flex" : "none";
+        document.getElementById("forgotForm").style.display = "none";
+        document.getElementById("registerSuccess").style.display = "none";
+    };
+    window.showForgot = () => {
+        document.getElementById("loginForm").style.display = "none";
+        document.getElementById("forgotForm").style.display = "flex";
+    };
+    switchTo(params.get("mode") === "register" ? "register" : "login");
+
+    window.doLogin = async () => {
+        const email = document.getElementById("loginEmail").value.trim();
+        const pass  = document.getElementById("loginPassword").value;
+        const errEl = document.getElementById("loginError");
+        errEl.textContent = "";
+        try {
+            await signInWithEmailAndPassword(auth, email, pass);
+            location.href = "app.html";
+        } catch (e) {
+            errEl.textContent = "אימייל או סיסמה שגויים.";
+        }
+    };
+
+    window.doRegister = async () => {
+        const firstName = document.getElementById("regFirst").value.trim();
+        const lastName  = document.getElementById("regLast").value.trim();
+        const email     = document.getElementById("regEmail").value.trim();
+        const password  = document.getElementById("regPassword").value;
+        const errEl = document.getElementById("regError");
+        errEl.textContent = "";
+
+        const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (!firstName || !lastName) { errEl.textContent = "יש למלא שם פרטי ושם משפחה."; return; }
+        if (!emailOk) { errEl.textContent = "כתובת אימייל לא תקינה."; return; }
+        if (password.length < 6) { errEl.textContent = "הסיסמה חייבת להכיל לפחות 6 תווים."; return; }
+
+        try {
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            await createPendingUser(cred.user.uid, { firstName, lastName, email });
+
+            // --- מייל אוטומטי לצוות הניהול (אופציונלי, כבוי כברירת מחדל — ראו EMAIL_NOTIFICATIONS_ENABLED למעלה) ---
+            // כרגע ההרשמה פשוט מופיעה בטבלת "משתמשים בהמתנה" ב-admin.html, וזה מספיק כדי שהאדמין יראה אותה.
+            if (EMAILJS_READY) {
+                try {
+                    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+                        to_email: "generalpointsss@gmail.com",
+                        full_name: firstName + " " + lastName,
+                        user_email: email,
+                        password_mask: "•".repeat(password.length),
+                    });
+                } catch (mailErr) {
+                    console.warn("EmailJS: שליחת ההתראה נכשלה (ההרשמה עצמה כן הצליחה)", mailErr);
+                }
+            }
+
+            document.getElementById("registerForm").style.display = "none";
+            document.getElementById("registerSuccess").style.display = "block";
+        } catch (e) {
+            errEl.textContent = e.code === "auth/email-already-in-use" ? "כתובת האימייל כבר רשומה." : "שגיאה בהרשמה, נסה שוב.";
+        }
+    };
+
+    window.doForgot = async () => {
+        const email = document.getElementById("forgotEmail").value.trim();
+        const errEl = document.getElementById("forgotError");
+        try {
+            await sendPasswordResetEmail(auth, email);
+            errEl.style.color = "var(--green)";
+            errEl.textContent = "נשלח קישור לאיפוס סיסמה, בדוק/י את תיבת המייל.";
+        } catch (e) {
+            errEl.style.color = "var(--red)";
+            errEl.textContent = "לא נמצא חשבון עם אימייל זה.";
+        }
+    };
+</script>
+</body>
+</html>

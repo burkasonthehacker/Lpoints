@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>בורסת הנקודות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="pse-header">
+    <div class="pse-subtitle">Points Stock Exchange</div>
+    <h1 class="pse-title">בורסת הנקודות</h1>
+    <div class="btn-row">
+        <button class="btn" onclick="location.href='auth.html?mode=login'">התחברות</button>
+        <button class="btn btn-primary" onclick="location.href='auth.html?mode=register'">הרשמה</button>
+    </div>
+</header>
+<div class="ticker-rule"></div>
+
+<main style="width:min(560px,92%); display:flex; flex-direction:column; gap:28px; margin-top:24px;">
+
+    <section>
+        <div class="section-title">Leaderboard</div>
+        <div class="lb-fade-wrap" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+            <div id="lbTop" style="display:flex; flex-direction:column; gap:8px;"></div>
+            <div id="lbFadeRow" class="lb-row lb-fade"></div>
+            <div class="lb-lock-overlay" onclick="location.href='auth.html?mode=login'"></div>
+        </div>
+    </section>
+
+    <section>
+        <div class="section-title">תנודות אחרונות בשוק</div>
+        <div class="lb-fade-wrap" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+            <div id="movesTop" style="display:flex; flex-direction:column; gap:8px;"></div>
+            <div id="movesFadeRow" class="move-row lb-fade"></div>
+            <div class="lb-lock-overlay" onclick="location.href='auth.html?mode=login'"></div>
+        </div>
+    </section>
+
+    <section>
+        <div class="section-title">תיק אישי</div>
+        <div class="panel empty-note">אנא התחברו או הירשמו כדי ליצור תיק אישי</div>
+    </section>
+
+</main>
+
+<footer class="pse-footer">בורסת הנקודות · חלק ממשפחת אתרי הנקודות</footer>
+
+<script type="module">
+    import { computeTotals, fetchAllSitesFriends, fetchParticipants, fetchRecentMoves } from "./logic.js";
+
+    function pieStyle(breakdown, total) {
+        const liriPct = total ? (breakdown.liri || 0) / total * 100 : 0;
+        const segevPct = total ? (breakdown.segev || 0) / total * 100 : 0;
+        return `background: conic-gradient(var(--clr-liri) 0% ${liriPct}%, var(--clr-segev) ${liriPct}% ${liriPct+segevPct}%, var(--clr-shanan) ${liriPct+segevPct}% 100%);`;
+    }
+
+    (async () => {
+        try {
+            const [friendsBySite, participants] = await Promise.all([fetchAllSitesFriends(), fetchParticipants()]);
+            const totals = computeTotals(participants, friendsBySite).slice(0, 3);
+            const box = document.getElementById("lbTop");
+            totals.forEach((p, i) => {
+                const row = document.createElement("div");
+                row.className = "lb-row";
+                row.onclick = () => location.href = "auth.html?mode=login";
+                row.innerHTML = `<span class="lb-rank mono">#${i+1}</span>
+                    <span class="lb-name">${p.name}</span>
+                    <span class="lb-total mono">${p.total}</span>
+                    <span class="lb-pie" style="${pieStyle(p.breakdown, p.total)}"></span>`;
+                box.appendChild(row);
+            });
+            const fade = document.getElementById("lbFadeRow");
+            const rest = computeTotals(participants, friendsBySite)[3];
+            fade.innerHTML = rest
+                ? `<span class="lb-rank mono">#4</span><span class="lb-name">${rest.name}</span><span class="lb-total mono">${rest.total}</span><span class="lb-pie" style="${pieStyle(rest.breakdown, rest.total)}"></span>`
+                : `<span class="lb-name">עוד משתתפים...</span>`;
+        } catch (e) { console.error("leaderboard load failed", e); }
+
+        try {
+            const moves = await fetchRecentMoves(4);
+            const box = document.getElementById("movesTop");
+            moves.slice(0, 3).forEach(m => box.appendChild(moveRow(m)));
+            const fade = document.getElementById("movesFadeRow");
+            if (moves[3]) fade.replaceWith(moveRow(moves[3], true));
+        } catch (e) { console.error("moves load failed", e); }
+
+        function moveRow(m, fadeClass) {
+            const el = document.createElement("div");
+            el.className = "move-row" + (fadeClass ? " lb-fade" : "");
+            if (fadeClass) el.id = "movesFadeRow";
+            const up = m.delta >= 0;
+            el.innerHTML = `<span class="move-date mono">${m.date.toLocaleDateString("he-IL")} ${m.date.toLocaleTimeString("he-IL",{hour:'2-digit',minute:'2-digit'})}</span>
+                <span class="move-name">${m.name}</span>
+                <span class="move-delta ${up ? 'up':'down'}">${up?'+':''}${m.delta} <span class="move-site-tag">${m.siteLabel}</span> ${up?'▲':'▼'}</span>`;
+            return el;
+        }
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>בורסת הנקודות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="balance-chip" onclick="showSection('portfolioSection')">
+    <div class="balance-item"><span class="balance-num mono free" id="chipFree">–</span><span class="balance-label">לא בהשקעה</span></div>
+    <div class="balance-item"><span class="balance-num mono invested" id="chipInvested">–</span><span class="balance-label">בהשקעה</span></div>
+</div>
+<button class="btn" style="position:fixed; top:14px; right:14px; z-index:50;" onclick="doLogout()">התנתקות</button>
+
+<header class="pse-header">
+    <div class="pse-subtitle">Points Stock Exchange</div>
+    <h1 class="pse-title">בורסת הנקודות</h1>
+</header>
+
+<div class="nav-container">
+    <div class="nav-btn active" onclick="showSection('leaderboardSection', this)">לוח מובילים</div>
+    <div class="nav-btn" onclick="showSection('portfolioSection', this)">ההשקעות שלי</div>
+</div>
+
+<div id="gate" class="panel" style="width:min(560px,92%); text-align:center; display:none;"></div>
+
+<main id="mainApp" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center;">
+
+    <!-- LEADERBOARD -->
+    <div id="leaderboardSection" class="section active">
+        <div id="lbList" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
+    <!-- PORTFOLIO -->
+    <div id="portfolioSection" class="section">
+        <div class="panel">
+            <div class="section-title" style="text-align:right; margin-bottom:10px;">היתרה שלי</div>
+            <div style="display:flex; justify-content:space-around;">
+                <div class="balance-item"><span class="balance-num mono free" id="pFree" style="font-size:1.4rem;">–</span><span class="balance-label">נק' בורסה פנויות</span></div>
+                <div class="balance-item"><span class="balance-num mono invested" id="pInvested" style="font-size:1.4rem;">–</span><span class="balance-label">נק' בורסה מושקעות</span></div>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-toolbar"><span class="section-title">פילוח תיק ההשקעות</span></div>
+            <canvas id="portfolioPie" height="220"></canvas>
+        </div>
+        <div id="investmentsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
+    <!-- INVEST -->
+    <div id="investSection" class="section">
+        <div class="panel">
+            <div class="section-title" style="text-align:right;">השקעה ב<span id="investName" style="color:var(--gold-bright);"></span></div>
+            <p style="color:var(--text-muted); font-size:.9rem;">יתרה פנויה: <span class="mono" id="investFreeShow"></span> נק' בורסה</p>
+            <input id="investAmount" type="range" min="1" step="1" oninput="syncInvestNum()">
+            <div style="text-align:center; margin:6px 0;"><span class="mono" id="investNum" style="font-size:1.3rem; color:var(--gold-bright);"></span> נק' בורסה</div>
+            <button class="btn btn-primary" onclick="confirmInvest()">השקעה</button>
+            <div class="field-error" id="investError"></div>
+        </div>
+    </div>
+
+    <!-- STATS -->
+    <div id="statsSection" class="section">
+        <div class="chart-wrap">
+            <div class="chart-toolbar">
+                <span class="section-title" id="statsName"></span>
+                <label><input type="checkbox" id="splitTypes" onchange="renderStatsChart()"> הפרדת סוגי נקודות</label>
+                <button class="btn" onclick="resetZoom()">↺ רענון (כל הזמנים)</button>
+            </div>
+            <canvas id="statsChart" height="260"></canvas>
+            <p style="color:var(--text-muted); font-size:.8rem; text-align:center; margin-top:6px;">גררו על הגרף כדי להתמקד בטווח זמן מסוים</p>
+        </div>
+    </div>
+
+</main>
+
+<script type="module">
+    import { auth } from "../shared/firebase.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import {
+        getUserProfile, fetchAllSitesFriends, fetchParticipants, computeTotals,
+        fetchUserInvestments, createInvestment, stopInvestment, currentInvestmentValue,
+        fetchParticipantHistory, buildInvestmentSeries, attachDragZoom
+    } from "./logic.js";
+
+    let profile = null, participants = [], friendsBySite = {}, totals = [], myInvestments = [];
+    let statsChart = null, zoomCtl = null, selectedParticipant = null;
+
+    window.doLogout = () => signOut(auth).then(() => location.href = "index.html");
+
+    onAuthStateChanged(auth, async (user) => {
+        if (!user) { location.href = "auth.html?mode=login"; return; }
+        profile = await getUserProfile(user.uid);
+        const gate = document.getElementById("gate");
+        if (!profile) { gate.style.display = "block"; gate.textContent = "לא נמצא פרופיל משתמש."; return; }
+        if (profile.status === "pending") {
+            gate.style.display = "block";
+            gate.textContent = "החשבון שלך ממתין לאישור מנהל הבורסה. תקבל/י הודעה במייל לכתובת " + profile.email + " כשההרשמה תאושר.";
+            return;
+        }
+        if (profile.status === "suspended") {
+            gate.style.display = "block";
+            gate.textContent = "חשבונך הושהה." + (profile.suspendNote ? (" הערה: " + profile.suspendNote) : "");
+            return;
+        }
+        if (profile.status === "rejected") {
+            gate.style.display = "block";
+            gate.textContent = "בקשת ההרשמה שלך נדחתה. לשאלות: generalpointsss@gmail.com";
+            return;
+        }
+        document.getElementById("mainApp").style.display = "flex";
+        await loadWorld();
+    });
+
+    async function loadWorld() {
+        [friendsBySite, participants, myInvestments] = await Promise.all([
+            fetchAllSitesFriends(), fetchParticipants(), fetchUserInvestments(auth.currentUser.uid)
+        ]);
+        totals = computeTotals(participants, friendsBySite);
+        renderBalances();
+        renderLeaderboard();
+        renderPortfolio();
+    }
+
+    function investedSum() {
+        return myInvestments.filter(i => i.active).reduce((sum, inv) => {
+            const p = totals.find(t => t.id === inv.participantId);
+            return sum + currentInvestmentValue(inv, p ? p.total : inv.baseTotal);
+        }, 0);
+    }
+
+    function renderBalances() {
+        const free = profile.freePoints ?? 0;
+        const inv = investedSum();
+        document.getElementById("chipFree").textContent = free.toFixed(1);
+        document.getElementById("chipInvested").textContent = inv.toFixed(1);
+        document.getElementById("pFree").textContent = free.toFixed(1);
+        document.getElementById("pInvested").textContent = inv.toFixed(1);
+    }
+
+    window.showSection = (id, btn) => {
+        document.querySelectorAll(".section").forEach(el => el.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+        document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+        if (id === "statsSection" && selectedParticipant) renderStatsChart();
+    };
+
+    function renderLeaderboard() {
+        const box = document.getElementById("lbList");
+        box.innerHTML = "";
+        totals.forEach((p, i) => {
+            const wrap = document.createElement("div");
+            const row = document.createElement("div");
+            row.className = "lb-row";
+            row.innerHTML = `<span class="lb-rank mono">#${i+1}</span><span class="lb-name">${p.name}</span><span class="lb-total mono">${p.total}</span>`;
+            const detail = document.createElement("div");
+            detail.className = "lb-detail";
+            detail.innerHTML = `<button class="btn btn-primary" data-act="invest">השקעה ב${p.name}</button><button class="btn" data-act="stats">הסטטיסטיקות של ${p.name}</button>`;
+            row.onclick = () => detail.classList.toggle("open");
+            detail.querySelector('[data-act="invest"]').onclick = () => openInvest(p);
+            detail.querySelector('[data-act="stats"]').onclick = () => openStats(p);
+            wrap.appendChild(row); wrap.appendChild(detail);
+            box.appendChild(wrap);
+        });
+    }
+
+    function openInvest(p) {
+        selectedParticipant = p;
+        document.getElementById("investName").textContent = p.name;
+        const free = profile.freePoints ?? 0;
+        document.getElementById("investFreeShow").textContent = free.toFixed(1);
+        const range = document.getElementById("investAmount");
+        range.max = Math.max(1, Math.floor(free));
+        range.value = Math.min(1, Math.floor(free));
+        syncInvestNum();
+        document.getElementById("investError").textContent = "";
+        showSection("investSection");
+    }
+    window.syncInvestNum = () => document.getElementById("investNum").textContent = document.getElementById("investAmount").value;
+    window.confirmInvest = async () => {
+        const amount = Number(document.getElementById("investAmount").value);
+        try {
+            await createInvestment(auth.currentUser.uid, selectedParticipant, amount);
+            profile = await getUserProfile(auth.currentUser.uid);
+            myInvestments = await fetchUserInvestments(auth.currentUser.uid);
+            renderBalances(); renderPortfolio();
+            showSection("portfolioSection");
+        } catch (e) {
+            document.getElementById("investError").textContent = e.message || "שגיאה בביצוע ההשקעה.";
+        }
+    };
+
+    function openStats(p) { selectedParticipant = p; document.getElementById("statsName").textContent = "הסטטיסטיקות של " + p.name; showSection("statsSection"); }
+
+    function renderPortfolio() {
+        const list = document.getElementById("investmentsList");
+        list.innerHTML = "";
+        const active = myInvestments.filter(i => i.active);
+        if (!active.length) { list.innerHTML = `<div class="empty-note">אין השקעות פעילות כרגע.</div>`; }
+        active.forEach(inv => {
+            const p = totals.find(t => t.id === inv.participantId);
+            const value = currentInvestmentValue(inv, p ? p.total : inv.baseTotal);
+            const el = document.createElement("div");
+            el.className = "lb-row";
+            el.innerHTML = `<span class="lb-name">${inv.participantName}</span>
+                <span class="lb-total mono">${value.toFixed(1)}</span>
+                <button class="btn btn-danger" style="padding:6px 12px;">הפסקת השקעה</button>`;
+            el.querySelector("button").onclick = async () => {
+                await stopInvestment(auth.currentUser.uid, inv.id, p ? p.total : inv.baseTotal);
+                profile = await getUserProfile(auth.currentUser.uid);
+                myInvestments = await fetchUserInvestments(auth.currentUser.uid);
+                renderBalances(); renderPortfolio();
+            };
+            list.appendChild(el);
+        });
+        renderPie(active);
+    }
+
+    function renderPie(active) {
+        const ctx = document.getElementById("portfolioPie").getContext("2d");
+        if (window.__pieChart) window.__pieChart.destroy();
+        if (!active.length) return;
+        const colors = ['#c9a227','#2f9e6e','#9d4edd','#c1443a','#3d6b8c','#e6c65c'];
+        window.__pieChart = new Chart(ctx, {
+            type: "doughnut",
+            data: {
+                labels: active.map(i => i.participantName),
+                datasets: [{ data: active.map(i => { const p = totals.find(t=>t.id===i.participantId); return currentInvestmentValue(i, p?p.total:i.baseTotal); }), backgroundColor: colors }]
+            },
+            options: { plugins: { legend: { labels: { color: "#ece7d8" } } } }
+        });
+    }
+
+    window.resetZoom = () => zoomCtl?.reset();
+
+    window.renderStatsChart = async () => {
+        const p = selectedParticipant;
+        const timeline = await fetchParticipantHistory(p);
+        const split = document.getElementById("splitTypes").checked;
+        const myInv = myInvestments.find(i => i.participantId === p.id && i.active);
+
+        const datasets = [];
+        if (split) {
+            const siteColors = { liri: "#9d4edd", shanan: "#f0e2c0", segev: "#ffd700" };
+            Object.keys(timeline[0]?.siteTotals || {}).forEach(siteKey => {
+                datasets.push({
+                    label: siteKey, stepped: true, borderWidth: 2, fill: false,
+                    borderColor: siteColors[siteKey] || "#888",
+                    data: timeline.map(pt => ({ x: pt.t, y: pt.siteTotals[siteKey] }))
+                });
+            });
+        } else {
+            datasets.push({ label: "סה\"כ נקודות", stepped: true, borderWidth: 2, borderColor: "#e6c65c", fill: false, data: timeline.map(pt => ({ x: pt.t, y: pt.combinedTotal })) });
+        }
+        if (myInv) {
+            datasets.push({ label: "נק' בורסה מושקעות", borderWidth: 2, borderDash: [5,3], borderColor: "#2f9e6e", fill: false, data: buildInvestmentSeries(myInv, timeline) });
+        }
+
+        const ctx = document.getElementById("statsChart").getContext("2d");
+        if (statsChart) statsChart.destroy();
+        statsChart = new Chart(ctx, {
+            type: "line",
+            data: { datasets },
+            options: {
+                responsive: true,
+                interaction: { mode: "index", intersect: false },
+                elements: { point: { radius: 0, hoverRadius: 5 } },
+                plugins: { legend: { labels: { color: "#ece7d8" } } },
+                scales: {
+                    x: { type: "time", time: { unit: "day" }, ticks: { color: "#838a94" }, grid: { color: "#262b35" } },
+                    y: { ticks: { color: "#838a94" }, grid: { color: "#262b35" } }
+                }
+            }
+        });
+        zoomCtl = attachDragZoom(statsChart, document.getElementById("statsChart"));
+    };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</body>
+</html>

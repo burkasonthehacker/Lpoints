@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ניהול | בורסת הנקודות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="pse-header">
+    <div class="pse-subtitle">Admin Console</div>
+    <h1 class="pse-title">ניהול בורסת הנקודות</h1>
+</header>
+
+<div class="nav-container" style="flex-wrap:wrap;">
+    <div class="nav-btn active" onclick="showSection('usersSection', this)">ניהול משתמשים <span id="badgeUsers" class="pill pill-pending" style="display:none;"></span></div>
+    <div class="nav-btn" onclick="showSection('matchSection', this)">ניהול משתתפים <span id="badgeMatch" class="pill pill-pending" style="display:none;"></span></div>
+    <div class="nav-btn" onclick="showSection('topSection', this)">המובילים</div>
+</div>
+
+<div id="gate" class="panel" style="width:min(700px,92%); text-align:center; display:none;"></div>
+
+<main id="mainAdmin" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center;">
+
+    <!-- USERS -->
+    <div id="usersSection" class="section active" style="width:min(700px,92%);">
+        <div class="section-title">משתמשים בהמתנה</div>
+        <table class="admin-table"><thead><tr><th>שם</th><th>אימייל</th><th>פעולות</th></tr></thead>
+            <tbody id="pendingBody"></tbody></table>
+
+        <div class="section-title" style="margin-top:20px;">משתמשים קיימים</div>
+        <table class="admin-table"><thead><tr><th>שם</th><th>אימייל</th><th>סטטוס</th><th>פעולות</th></tr></thead>
+            <tbody id="existingBody"></tbody></table>
+    </div>
+
+    <!-- MATCHING -->
+    <div id="matchSection" class="section" style="width:min(700px,92%);">
+        <div class="section-title">התאמות אוטומטיות בין אתרי הנקודות</div>
+        <p style="color:var(--text-muted); font-size:.85rem;">המערכת ניחשה את ההתאמות הבאות לפי חפיפת מילים בשם. ניתן לערוך שם קנוני, לבטל אתר בקבוצה, או לאשר.</p>
+        <div id="matchGroups" style="display:flex; flex-direction:column; gap:10px;"></div>
+        <div class="btn-row"><button class="btn btn-primary" onclick="confirmAllMatches()">אישור כל ההתאמות</button></div>
+
+        <div class="section-title" style="margin-top:10px;">אנשים חדשים שטרם שויכו</div>
+        <div id="unmatchedList" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
+
+    <!-- TOP -->
+    <div id="topSection" class="section" style="width:min(700px,92%);">
+        <div class="panel"><div class="section-title">הכי הרבה הושקע בו/בה</div><div id="topInvestedIn" class="empty-note">טוען...</div></div>
+        <div class="panel"><div class="section-title">הכי הרבה נק' בורסה (סה"כ)</div><div id="topBoursePoints" class="empty-note">טוען...</div></div>
+        <div class="panel"><div class="section-title">הכי הרבה נקודות בסה"כ (משלושת האתרים)</div><div id="topCombined" class="empty-note">טוען...</div></div>
+    </div>
+
+</main>
+
+<script type="module">
+    import { auth, ADMIN_UIDS } from "../shared/firebase.js";
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import {
+        fetchAllUsers, approveUser, rejectUser, suspendUser,
+        fetchAllSitesFriends, fetchParticipants, guessMatches, saveParticipants, findUnmatchedFriends,
+        computeTotals, fetchAllInvestments, fetchAllUsers as fetchUsers2
+    } from "./logic.js";
+
+    let friendsBySite = {}, participants = [], groups = [];
+
+    onAuthStateChanged(auth, async (user) => {
+        const gate = document.getElementById("gate");
+        if (!user || user.uid !== ADMIN_UIDS.pse) {
+            gate.style.display = "block";
+            gate.textContent = "עמוד זה זמין רק למנהל הבורסה.";
+            return;
+        }
+        document.getElementById("mainAdmin").style.display = "flex";
+        await loadUsers();
+        await loadMatching();
+        await loadTop();
+    });
+
+    window.showSection = (id, btn) => {
+        document.querySelectorAll(".section").forEach(el => el.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+        document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+        btn.classList.add("active");
+    };
+
+    async function loadUsers() {
+        const users = await fetchAllUsers();
+        const pending = users.filter(u => u.status === "pending");
+        const existing = users.filter(u => u.status !== "pending");
+
+        const usersBadge = document.getElementById("badgeUsers");
+        if (pending.length) { usersBadge.style.display = "inline-block"; usersBadge.textContent = pending.length; }
+        else usersBadge.style.display = "none";
+
+        const pBody = document.getElementById("pendingBody");
+        pBody.innerHTML = pending.length ? "" : `<tr><td colspan="3" class="empty-note">אין משתמשים ממתינים</td></tr>`;
+        pending.forEach(u => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${u.firstName} ${u.lastName}</td><td class="mono">${u.email}</td><td></td>`;
+            const td = tr.lastElementChild;
+            const okBtn = Object.assign(document.createElement("button"), { className: "btn btn-primary", textContent: "אישור משתמש", style: "padding:5px 10px; margin-inline-end:6px;" });
+            const noBtn = Object.assign(document.createElement("button"), { className: "btn btn-danger", textContent: "דחיית משתמש", style: "padding:5px 10px;" });
+            okBtn.onclick = async () => { await approveUser(u.id); loadUsers(); };
+            noBtn.onclick = async () => { await rejectUser(u.id); loadUsers(); };
+            td.append(okBtn, noBtn);
+            pBody.appendChild(tr);
+        });
+
+        const eBody = document.getElementById("existingBody");
+        eBody.innerHTML = existing.length ? "" : `<tr><td colspan="4" class="empty-note">אין משתמשים</td></tr>`;
+        existing.forEach(u => {
+            const tr = document.createElement("tr");
+            const pillClass = u.status === "approved" ? "pill-approved" : u.status === "suspended" ? "pill-suspended" : "pill-pending";
+            tr.innerHTML = `<td>${u.firstName} ${u.lastName}</td><td class="mono">${u.email}</td><td><span class="pill ${pillClass}">${u.status}</span></td><td></td>`;
+            const td = tr.lastElementChild;
+            const btn = Object.assign(document.createElement("button"), { className: "btn btn-danger", textContent: "השהיית חשבון", style: "padding:5px 10px;" });
+            btn.onclick = async () => {
+                const note = prompt("הערה לחשבון המושהה (רשות):", "");
+                await suspendUser(u.id, note || "");
+                loadUsers();
+            };
+            td.appendChild(btn);
+            eBody.appendChild(tr);
+        });
+    }
+
+    async function loadMatching() {
+        [friendsBySite, participants] = await Promise.all([fetchAllSitesFriends(), fetchParticipants()]);
+        groups = guessMatches(friendsBySite);
+        // הסר קבוצות שכבר קיימות כ-participants מאושרים עם אותם קישורים בדיוק
+        const box = document.getElementById("matchGroups");
+        box.innerHTML = "";
+        groups.forEach((g, idx) => {
+            const el = document.createElement("div");
+            el.className = "match-group";
+            const nameInput = document.createElement("input");
+            nameInput.value = g.name; nameInput.style.width = "140px";
+            nameInput.oninput = () => g.name = nameInput.value;
+            el.appendChild(nameInput);
+            Object.entries(g.links).forEach(([site, id]) => {
+                const tag = document.createElement("span");
+                tag.className = "match-tag";
+                tag.textContent = `${site}: ${id} ✕`;
+                tag.onclick = () => { delete g.links[site]; tag.remove(); };
+                el.appendChild(tag);
+            });
+            box.appendChild(el);
+        });
+
+        const unmatched = findUnmatchedFriends(participants, friendsBySite);
+        const matchBadge = document.getElementById("badgeMatch");
+        if (unmatched.length) { matchBadge.style.display = "inline-block"; matchBadge.textContent = unmatched.length; }
+        else matchBadge.style.display = "none";
+
+        const ul = document.getElementById("unmatchedList");
+        ul.innerHTML = unmatched.length ? "" : `<div class="empty-note">אין אנשים חדשים שטרם שויכו</div>`;
+        unmatched.forEach(u => {
+            const row = document.createElement("div");
+            row.className = "match-tag";
+            row.style.width = "fit-content";
+            row.textContent = `${u.id} (${u.site})`;
+            ul.appendChild(row);
+        });
+    }
+
+    window.confirmAllMatches = async () => {
+        await saveParticipants(groups);
+        alert("ההתאמות נשמרו בהצלחה.");
+        loadMatching();
+    };
+
+    async function loadTop() {
+        const totals = computeTotals(participants, friendsBySite);
+        document.getElementById("topCombined").textContent = totals[0] ? `${totals[0].name} — ${totals[0].total} נקודות` : "אין נתונים";
+
+        const investments = await fetchAllInvestments();
+        const byParticipant = {};
+        investments.forEach(inv => { byParticipant[inv.participantName] = (byParticipant[inv.participantName] || 0) + inv.initialAmount; });
+        const topInv = Object.entries(byParticipant).sort((a, b) => b[1] - a[1])[0];
+        document.getElementById("topInvestedIn").textContent = topInv ? `${topInv[0]} — ${topInv[1].toFixed(1)} נק' בורסה מושקעות בו/בה` : "אין השקעות עדיין";
+
+        const users = await fetchUsers2();
+        const byUserInvested = {};
+        investments.forEach(inv => { byUserInvested[inv.investorUid] = (byUserInvested[inv.investorUid] || 0) + inv.initialAmount; });
+        let best = null;
+        users.forEach(u => {
+            const total = (u.freePoints || 0) + (byUserInvested[u.id] || 0);
+            if (!best || total > best.total) best = { name: `${u.firstName} ${u.lastName}`, total };
+        });
+        document.getElementById("topBoursePoints").textContent = best ? `${best.name} — ${best.total.toFixed(1)} נק' בורסה` : "אין נתונים";
+    }
+</script>
+</body>
+</html>
